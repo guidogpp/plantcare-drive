@@ -1,24 +1,35 @@
 
 import { useRef, useState } from 'react';
-import { useGoogleLogin } from '@react-oauth/google';
 import { supabase } from '../supabaseClient';
-import { analyzePlant } from '../services/ai';
+import { analyzeImageWithGemini } from '../services/ai';
 
 export default function UploadButton({ onUploadSuccess }) {
   const fileRef = useRef(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const folderId = import.meta.env.VITE_GOOGLE_FOLDER_ID;
 
-  const login = useGoogleLogin({
-    scope: 'https://www.googleapis.com/auth/drive.file',
-    onSuccess: async (tokenResponse) => {
-      if (fileRef.current) {
+  const handleFileSelect = () => {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (file) {
         setIsAnalyzing(true);
         try {
-          // Ejecutar subida y análisis en paralelo
+          // 1. Obtener sesión de Supabase (y el provider_token)
+          const { data: { session } } = await supabase.auth.getSession();
+          
+          if (!session || !session.provider_token) {
+            console.error('No hay sesión activa o falta provider_token');
+            // Opcional: Redirigir a login si el token expiró
+            return;
+          }
+
+          // 2. Ejecutar subida a Drive y análisis con Gemini en paralelo
           const [driveData, aiData] = await Promise.all([
-            uploadToDrive(fileRef.current, tokenResponse.access_token),
-            analyzePlant(fileRef.current)
+            uploadToDrive(file, session.provider_token),
+            analyzeImageWithGemini(file)
           ]);
 
           if (driveData?.id && aiData) {
@@ -30,25 +41,7 @@ export default function UploadButton({ onUploadSuccess }) {
           console.error('Error en proceso:', err);
         } finally {
           setIsAnalyzing(false);
-          fileRef.current = null;
         }
-      }
-    },
-    onError: error => console.error('Login Failed:', error)
-  });
-
-  const handleFileSelect = () => {
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = 'image/*';
-    fileInput.onchange = (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        fileRef.current = file;
-        // Hack para evitar bloqueador de popups en Chrome
-        setTimeout(() => {
-          login();
-        }, 500);
       }
     };
     fileInput.click();
@@ -76,46 +69,33 @@ export default function UploadButton({ onUploadSuccess }) {
   const saveToSupabase = async (driveId, aiData) => {
     const { 
       nombre_comun, 
-      nombre_cientifico, 
       estado_salud, 
-      analisis_forense, 
-      detalles_tecnicos_cuidado,
-      plan_crecimiento
+      diagnostico, 
+      riego_recomendado 
     } = aiData;
 
-    // Adaptamos el esquema de la IA al esquema de la base de datos
     const { error } = await supabase
       .from('plants')
       .insert([
         {
-          name: nombre_comun || 'Planta Desconocida',
-          scientific_name: nombre_cientifico || null,
-          species: nombre_cientifico || nombre_comun || 'Desconocida',
+          name: nombre_comun || 'Planta Analizada',
           image_id: driveId,
-          health_status: estado_salud || 'Desconocido',
+          health_status: `Puntuación: ${estado_salud || 'N/A'}/10`,
+          diagnosis_report: diagnostico || 'Sin diagnóstico disponible',
           forensic_analysis: {
-            leaf_condition: analisis_forense?.estado_hojas,
-            stem_structure: analisis_forense?.estructura_tallo,
-            detected_issues: analisis_forense?.problemas_detectados
+            leaf_condition: diagnostico,
+            detected_issues: [diagnostico]
           },
-          growth_roadmap: (plan_crecimiento || []).map(p => ({
-            stage: p.etapa,
-            action: p.instruccion
-          })),
           care_technical_details: {
-            light_lux: detalles_tecnicos_cuidado?.luz_lux,
-            ph_ideal: detalles_tecnicos_cuidado?.ph_suelo,
-            humidity_target: detalles_tecnicos_cuidado?.humedad_ideal
-          },
-          diagnosis_report: analisis_forense?.estado_hojas || 'Sin diagnóstico detallado',
-          water_frequency_days: 7 // Valor por defecto
+            humidity_target: riego_recomendado
+          }
         }
       ]);
 
     if (error) {
       console.error('Error Supabase:', error);
     } else {
-      console.log('✅ Guardado en Supabase con estructura extendida (Localizada)');
+      console.log('✅ Planta guardada con nueva arquitectura Auth/AI');
       if (onUploadSuccess) onUploadSuccess();
     }
   };
@@ -124,9 +104,10 @@ export default function UploadButton({ onUploadSuccess }) {
     <button 
       onClick={handleFileSelect}
       disabled={isAnalyzing}
-      className="bg-white text-emerald-700 px-4 py-2 rounded-lg font-semibold shadow hover:bg-gray-100 transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+      className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg hover:bg-emerald-700 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
     >
-      {isAnalyzing ? '🤖 Analizando con IA...' : '📸 Subir Nueva Planta'}
+      <span className="text-xl">{isAnalyzing ? '🤖' : '📸'}</span>
+      {isAnalyzing ? 'Analizando...' : 'Subir Planta'}
     </button>
   );
 }
