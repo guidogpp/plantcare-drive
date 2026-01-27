@@ -1,7 +1,11 @@
+
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import UploadButton from './components/UploadButton'
-import PlantDetailCard from './components/PlantDetailCard'
+import PlantSummaryCard from './components/PlantSummaryCard'
+import { Routes, Route, Link } from 'react-router-dom'
+import NewPlant from './pages/NewPlant'
+import PlantPage from './pages/PlantPage'
 
 function Dashboard({ session }) {
   const [plants, setPlants] = useState([])
@@ -46,7 +50,9 @@ function Dashboard({ session }) {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <UploadButton onUploadSuccess={fetchPlants} />
+            <Link to="/plants/new" className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg hover:bg-emerald-700 transition-all flex items-center gap-2 cursor-pointer">
+              <span className="text-xl">📸</span> Nueva Planta
+            </Link>
             <button 
               onClick={handleLogout}
               className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-red-500 transition-colors"
@@ -72,9 +78,9 @@ function Dashboard({ session }) {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             {plants.map(plant => (
-              <PlantDetailCard key={plant.id} plant={plant} />
+              <PlantSummaryCard key={plant.id} plant={plant} />
             ))}
           </div>
         )}
@@ -83,23 +89,20 @@ function Dashboard({ session }) {
   )
 }
 
+
 function App() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // 1. Obtener sesión inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setLoading(false)
     })
-
-    // 2. Suscribirse a cambios
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('EVENTO AUTH:', event)
       setSession(session)
     })
-
     return () => subscription.unsubscribe()
   }, [])
 
@@ -125,7 +128,6 @@ function App() {
     )
   }
 
-  // Si no hay sesión, mostramos el botón de login explícito
   if (!session) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6 text-center">
@@ -138,7 +140,6 @@ function App() {
         <p className="text-slate-500 max-w-xs mb-10 leading-relaxed font-medium">
           Sistema de análisis forense botánico con Inteligencia Artificial.
         </p>
-        
         <button 
           onClick={handleLogin}
           className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold flex items-center gap-3 hover:bg-slate-800 transition-all shadow-xl active:scale-95"
@@ -146,7 +147,6 @@ function App() {
           <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
           Entrar con Google
         </button>
-        
         <p className="mt-8 text-[10px] uppercase font-bold text-slate-300 tracking-widest">
           Requiere acceso a Google Drive
         </p>
@@ -154,8 +154,14 @@ function App() {
     )
   }
 
-  // Si hay sesión, mostramos el Dashboard
-  return <Dashboard session={session} />
+  // Rutas protegidas por sesión
+  return (
+    <Routes>
+      <Route path="/" element={<Dashboard session={session} />} />
+      <Route path="/plants/new" element={<NewPlant />} />
+      <Route path="/plants/:id" element={<PlantPage />} />
+    </Routes>
+  )
 }
 
 export default App
