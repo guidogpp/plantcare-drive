@@ -1,11 +1,15 @@
+
 import { useEffect, useRef, useState } from 'react';
+import { getDriveImageUrl } from '../helpers/getDriveImageUrl';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import PlantDetailView from '../components/PlantDetailView';
 import { ArrowLeft, Sprout, Camera, RefreshCcw } from 'lucide-react';
 import { analyzeImageWithGemini } from '../services/ai';
 
-export default function PlantPage() { // <--- ESTA LÍNEA FALTABA
+export default function PlantPage() {
+  // Estado para el slider de diagnósticos
+  const [slideIndex, setSlideIndex] = useState(0);
   const { id } = useParams();
   const [plant, setPlant] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -44,6 +48,34 @@ export default function PlantPage() { // <--- ESTA LÍNEA FALTABA
   };
 
   // --- Lógica de Re-diagnóstico ---
+    // --- Diagnóstico Slider ---
+    // Construir slides según reglas del objetivo
+    let slides = [];
+    const diagnoses = plant?.plant_diagnoses || [];
+    if (diagnoses.length > 0) {
+      slides = diagnoses
+        .filter(d => d && d.image_id)
+        .map(d => ({
+          id: d.id,
+          image_id: d.image_id,
+          created_at: d.created_at,
+          health_status: d.health_status,
+          diagnosis_report: d.diagnosis_report
+        }));
+    } else if (plant?.image_id) {
+      slides = [{
+        id: plant.id,
+        image_id: plant.image_id,
+        created_at: plant.created_at,
+        health_status: plant.health_status,
+        diagnosis_report: plant.diagnosis_report
+      }];
+    }
+
+    // Resetear slideIndex cuando cambian slides o id
+    useEffect(() => {
+      setSlideIndex(0);
+    }, [id, slides.length]);
   const handleUpdateClick = () => {
     setUpdateError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -178,6 +210,57 @@ export default function PlantPage() { // <--- ESTA LÍNEA FALTABA
           </div>
         )}
 
+        {/* Imagen/Slider SIEMPRE ARRIBA */}
+        <section className="mb-10 max-w-md mx-auto w-full">
+          {slides.length === 0 ? (
+            <div className="aspect-[4/5] w-full max-w-xs mx-auto bg-slate-100 rounded-2xl flex items-center justify-center border border-slate-200 text-slate-400 text-center font-bold text-lg">
+              Sin imagen disponible
+            </div>
+          ) : (
+            <div className="flex flex-col items-center">
+              <div className="aspect-[4/5] w-full max-w-xs bg-slate-100 rounded-2xl overflow-hidden flex items-center justify-center mb-4 border border-slate-200">
+                <img
+                  src={getDriveImageUrl(slides[slideIndex].image_id, 800)}
+                  alt={`Imagen ${slideIndex + 1}`}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                  onError={e => { e.target.style.opacity = 0.3; }}
+                />
+              </div>
+              {slides.length >= 2 && (
+                <div className="flex items-center gap-4 mb-2">
+                  <button
+                    className="px-3 py-1 rounded-full bg-slate-200 text-slate-500 font-bold disabled:opacity-40"
+                    onClick={() => setSlideIndex(i => Math.max(i - 1, 0))}
+                    disabled={slideIndex === 0}
+                    aria-label="Anterior"
+                  >Anterior</button>
+                  <span className="font-mono text-sm text-slate-500 select-none">
+                    {slideIndex + 1} / {slides.length}
+                  </span>
+                  <button
+                    className="px-3 py-1 rounded-full bg-slate-200 text-slate-500 font-bold disabled:opacity-40"
+                    onClick={() => setSlideIndex(i => Math.min(i + 1, slides.length - 1))}
+                    disabled={slideIndex === slides.length - 1}
+                    aria-label="Siguiente"
+                  >Siguiente</button>
+                </div>
+              )}
+              {/* Metadatos debajo de la imagen */}
+              <div className="text-center mt-2">
+                <div className="text-xs text-slate-400 font-bold">
+                  {slides[slideIndex].created_at ? new Date(slides[slideIndex].created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : ''}
+                </div>
+                {slides[slideIndex].health_status && (
+                  <div className="inline-block mt-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-black">
+                    {slides[slideIndex].health_status}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+
         <PlantDetailView plant={plant} />
 
         <section className="mt-12 bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
@@ -214,4 +297,4 @@ export default function PlantPage() { // <--- ESTA LÍNEA FALTABA
       </main>
     </div>
   );
-} // <--- LLAVE DE CIERRE FINAL
+}
